@@ -1,0 +1,79 @@
+{
+  "summary": {
+    "total_parts": 3,
+    "flagged_parts": 2,
+    "issues": {
+      "trend_mismatch": [
+        "part_A",
+        "partB"
+      ],
+      "missing_seasonality": [
+        "part_A"
+      ],
+      "volatility_mismatch": [
+        "part_A"
+      ],
+      "magnitude_mismatch": []
+    }
+  },
+  "top_issues": [
+    {
+      "part_id": "part_A",
+      "risk_score": 1.823963316831734,
+      "total_issues": 3,
+      "severity": "medium",
+      "issues": [
+        {
+          "type": "trend_mismatch",
+          "confidence": 0.20743327037504924
+        },
+        {
+          "type": "missing_seasonality",
+          "confidence": 1.0
+        },
+        {
+          "type": "volatility_mismatch",
+          "confidence": 0.6165300464566847
+        }
+      ]
+    },
+    {
+      "part_id": "partB",
+      "risk_score": 0.036059554329207905,
+      "total_issues": 1,
+      "severity": "none",
+      "issues": [
+        {
+          "type": "trend_mismatch",
+          "confidence": 0.036059554329207905
+        }
+      ]
+    }
+  ],
+  "key_recommendations": [
+    {
+      "type": "trend_mismatch",
+      "priority": "high",
+      "affected_parts": 2,
+      "percentage": 66.7,
+      "recommendation": "Review forecasting model parameters and recent structural breaks in demand patterns",
+      "action_items": [
+        "Analyze recent demand patterns for structural changes",
+        "Review model training period and data quality",
+        "Consider ensemble models or trend-aware algorithms"
+      ]
+    },
+    {
+      "type": "missing_seasonality",
+      "priority": "high",
+      "affected_parts": 1,
+      "percentage": 33.3,
+      "recommendation": "Enhance seasonal modeling capabilities in forecasting process",
+      "action_items": [
+        "Implement seasonal decomposition in preprocessing",
+        "Use seasonal ARIMA or exponential smoothing models",
+        "Validate seasonal patterns in historical data"
+      ]
+    }
+  ]
+}

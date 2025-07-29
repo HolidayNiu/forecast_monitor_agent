@@ -126,7 +126,7 @@ def _get_openai_explanation(prompt, model="gpt-3.5-turbo", max_tokens=1000, temp
         raise Exception("Failed to get OpenAI explanation: " + str(e))
 
 
-def _get_databricks_explanation(prompt, model="databricks-meta-llama-3-1-405b-instruct", max_tokens=1000, temperature=0.3):
+def _get_databricks_explanation(prompt, model=None, max_tokens=1000, temperature=0.3):
     """Get explanation from Databricks API."""
     try:
         import requests
@@ -140,6 +140,10 @@ def _get_databricks_explanation(prompt, model="databricks-meta-llama-3-1-405b-in
     host = os.getenv("DATABRICKS_HOST")
     if not host:
         raise ValueError("DATABRICKS_HOST environment variable not set")
+    
+    # Get model endpoint name from environment or use default
+    if model is None:
+        model = os.getenv("DATABRICKS_MODEL_ENDPOINT", "databricks-meta-llama-3-1-405b-instruct")
     
     # Ensure host has proper format
     if not host.startswith("https://"):

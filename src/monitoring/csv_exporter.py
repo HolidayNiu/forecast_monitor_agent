@@ -26,12 +26,13 @@ class CSVExporter:
         """
         self.output_file = output_file or config.CSV_OUTPUT_FILE
         
-    def format_results_for_csv(self, results: List[Dict]) -> pd.DataFrame:
+    def format_results_for_csv(self, results: List[Dict], original_df: pd.DataFrame = None) -> pd.DataFrame:
         """
         Format diagnostic results for CSV export.
         
         Args:
             results: List of diagnostic results from BatchDetector
+            original_df: Original dataframe with product_bu, price, location data
             
         Returns:
             DataFrame formatted for CSV export
@@ -39,6 +40,9 @@ class CSVExporter:
         # Define the columns we want in the CSV
         csv_columns = [
             'part_id',
+            'product_bu',
+            'local_price', 
+            'location',
             'severity',
             'total_issues',
             'risk_score',
@@ -68,9 +72,21 @@ class CSVExporter:
         df_data = []
         for result in results:
             row = {}
+            part_id = result.get('part_id')
+            
+            # Get additional data from original dataframe if available
+            part_data = None
+            if original_df is not None and part_id:
+                matching_rows = original_df[original_df['item_loc_id'] == part_id]
+                if len(matching_rows) > 0:
+                    part_data = matching_rows.iloc[0]
+            
             for col in csv_columns:
                 if col in result:
                     row[col] = result[col]
+                elif col in ['product_bu', 'local_price', 'location'] and part_data is not None:
+                    # Get from original dataframe
+                    row[col] = part_data[col] if col in part_data else None
                 else:
                     # Handle missing columns with appropriate defaults
                     if 'detected' in col:
@@ -93,7 +109,7 @@ class CSVExporter:
         
         return df
     
-    def add_summary_sheet(self, results: List[Dict], summary_stats: Dict) -> Dict[str, pd.DataFrame]:
+    def add_summary_sheet(self, results: List[Dict], summary_stats: Dict, original_df: pd.DataFrame = None) -> Dict[str, pd.DataFrame]:
         """
         Create multiple sheets including a summary sheet.
         
@@ -107,7 +123,7 @@ class CSVExporter:
         sheets = {}
         
         # Main results sheet
-        sheets['Diagnostic_Results'] = self.format_results_for_csv(results)
+        sheets['Diagnostic_Results'] = self.format_results_for_csv(results, original_df)
         
         # Summary sheet
         summary_data = []
@@ -178,7 +194,7 @@ class CSVExporter:
         return sheets
     
     def export_to_csv(self, results: List[Dict], summary_stats: Dict = None, 
-                      multi_sheet: bool = False) -> Path:
+                      multi_sheet: bool = False, original_df: pd.DataFrame = None) -> Path:
         """
         Export results to CSV file.
         
@@ -196,7 +212,7 @@ class CSVExporter:
         if multi_sheet and summary_stats:
             # Export as Excel with multiple sheets
             excel_file = self.output_file.with_suffix('.xlsx')
-            sheets = self.add_summary_sheet(results, summary_stats)
+            sheets = self.add_summary_sheet(results, summary_stats, original_df)
             
             with pd.ExcelWriter(excel_file, engine='openpyxl') as writer:
                 for sheet_name, df in sheets.items():
@@ -206,7 +222,7 @@ class CSVExporter:
             return excel_file
         else:
             # Simple CSV export
-            df = self.format_results_for_csv(results)
+            df = self.format_results_for_csv(results, original_df)
             df.to_csv(self.output_file, index=False)
             
             logger.info(f"Exported results to: {self.output_file}")
@@ -214,7 +230,8 @@ class CSVExporter:
     
     def export_filtered_results(self, results: List[Dict], 
                                severity_filter: List[str] = None,
-                               issue_filter: List[str] = None) -> Path:
+                               issue_filter: List[str] = None, 
+                               original_df: pd.DataFrame = None) -> Path:
         """
         Export filtered results to CSV.
         
@@ -255,7 +272,7 @@ class CSVExporter:
         else:
             filtered_file = self.output_file
         
-        df = self.format_results_for_csv(filtered_results)
+        df = self.format_results_for_csv(filtered_results, original_df)
         df.to_csv(filtered_file, index=False)
         
         logger.info(f"Exported {len(filtered_results)} filtered results to: {filtered_file}")

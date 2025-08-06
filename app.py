@@ -18,13 +18,27 @@ import json
 import os
 from pathlib import Path
 
-from modules.loader import load_data, get_item_data, get_all_item_ids, get_recent_actuals, get_early_forecast
-from modules.diagnostics import run_all_diagnostics
+from modules.loader import load_data, get_item_data, get_all_item_ids
 from modules.visualizer import plot_forecast_analysis, create_summary_stats_table
 from modules.explainer_simple import (prepare_analysis_summary, generate_explanation, 
                                      format_explanation_report, check_llm_availability, 
                                      get_preferred_provider)
 from modules.reporter import create_detailed_report
+
+# Try to import DetectorAgent for agent-based processing
+try:
+    from agent.detector_agent import DetectorAgent
+    AGENT_AVAILABLE = True
+except ImportError:
+    AGENT_AVAILABLE = False
+
+# Try to import BasicRetrainAgent
+try:
+    from agent.basic_retrain_agent import BasicRetrainAgent
+    from modules.retrain_visualizer import plot_simple_before_after
+    AUTO_RETRAIN_AVAILABLE = True
+except ImportError:
+    AUTO_RETRAIN_AVAILABLE = False
 
 # Import batch processing modules
 try:
@@ -53,354 +67,332 @@ def run_batch_diagnostics(df):
         return None, None
 
 
-def create_batch_summary_visualizations(results, summary_stats):
-    """Create visualizations for batch summary."""
-    if not results or not summary_stats:
-        return
-    
-    # Overview metrics
-    col1, col2, col3, col4 = st.columns(4)
-    
-    with col1:
-        st.metric("Total Parts", summary_stats.get('total_parts', 0))
-    
-    with col2:
-        flagged = summary_stats.get('flagged_parts', 0)
-        total = summary_stats.get('total_parts', 1)
-        st.metric("Parts with Issues", flagged, f"{flagged/total*100:.1f}%")
-    
-    with col3:
-        st.metric("Average Risk Score", f"{summary_stats.get('avg_risk_score', 0):.3f}")
-    
-    with col4:
-        st.metric("Avg Issues/Part", f"{summary_stats.get('avg_issues_per_part', 0):.1f}")
-    
-    # Issue breakdown chart
-    st.subheader("📊 Issue Breakdown")
-    issues = summary_stats.get('issues', {})
-    
-    if any(len(parts) > 0 for parts in issues.values()):
-        # Create issue counts
-        issue_data = []
-        for issue_type, part_list in issues.items():
-            if part_list:
-                issue_data.append({
-                    'Issue Type': issue_type.replace('_', ' ').title(),
-                    'Count': len(part_list),
-                    'Parts': ', '.join(part_list[:5]) + ('...' if len(part_list) > 5 else '')
-                })
-        
-        if issue_data:
-            issue_df = pd.DataFrame(issue_data)
-            
-            # Bar chart
-            fig = px.bar(issue_df, x='Issue Type', y='Count', 
-                        title="Number of Parts by Issue Type",
-                        color='Count',
-                        color_continuous_scale='Reds')
-            st.plotly_chart(fig, use_container_width=True)
-            
-            # Issue details table
-            st.dataframe(issue_df, use_container_width=True)
-    
-    # Severity breakdown
-    st.subheader("⚠️ Severity Distribution")
-    severity_breakdown = summary_stats.get('severity_breakdown', {})
-    
-    if severity_breakdown:
-        severity_data = []
-        colors = {'high': '#FF4B4B', 'medium': '#FFA500', 'low': '#FFFF00', 'none': '#00FF00'}
-        
-        for severity, count in severity_breakdown.items():
-            if count > 0:
-                severity_data.append({
-                    'Severity': severity.title(),
-                    'Count': count,
-                    'Color': colors.get(severity, '#808080')
-                })
-        
-        if severity_data:
-            severity_df = pd.DataFrame(severity_data)
-            
-            # Pie chart
-            fig = px.pie(severity_df, values='Count', names='Severity',
-                        title="Parts by Severity Level",
-                        color='Severity',
-                        color_discrete_map={row['Severity']: row['Color'] for _, row in severity_df.iterrows()})
-            st.plotly_chart(fig, use_container_width=True)
 
 
-def create_top_issues_table(results):
-    """Create a table of top problematic parts."""
+
+
+def create_simple_batch_table(results, df):
+    """Create a simple table showing all parts with their summary information."""
     if not results:
+        st.info("No results to display.")
         return
     
-    # Filter parts with issues and sort by risk score
-    parts_with_issues = [r for r in results if r.get('total_issues', 0) > 0]
-    parts_with_issues.sort(key=lambda x: x.get('risk_score', 0), reverse=True)
-    
-    if not parts_with_issues:
-        st.info("No parts with issues detected.")
-        return
-    
-    # Create display data
+    # Create display data for all parts
     display_data = []
-    for part in parts_with_issues[:10]:  # Top 10
-        display_data.append({
-            'Part ID': part['part_id'],
-            'Risk Score': f"{part.get('risk_score', 0):.3f}",
-            'Issues': part.get('total_issues', 0),
-            'Severity': part.get('severity', 'none').title(),
-            'Problems': part.get('comment', 'No description')
-        })
+    for result in results:
+        part_id = result.get('part_id')
+        
+        # Get additional data from original dataframe
+        part_data = df[df['item_loc_id'] == part_id].iloc[0] if len(df[df['item_loc_id'] == part_id]) > 0 else None
+        
+        if part_data is not None:
+            product_bu = part_data['product_bu']
+            location = part_data['location']
+            price = part_data['local_price']
+            
+            display_data.append({
+                'Part Number': part_id,
+                'Product BU': product_bu,
+                'Location': location,
+                'Price': f"${price:,.2f}",
+                'Detected Issue': result.get('comment', 'No issues detected'),
+                'Risk Score': f"{result.get('risk_score', 0):.3f}",
+                'Issue Count': result.get('total_issues', 0)
+            })
     
-    if display_data:
-        df = pd.DataFrame(display_data)
-        st.dataframe(df, use_container_width=True)
-
-
-def display_batch_summary(df):
-    """Display the complete batch summary section."""
-    st.header("📋 Batch Analysis Summary")
-    
-    if not BATCH_AVAILABLE:
-        st.error("Batch processing modules not available. Please check your installation.")
+    if not display_data:
+        st.info("No parts to display.")
         return
     
-    # Run batch processing
-    with st.spinner("Running batch diagnostics..."):
-        results, summary_stats = run_batch_diagnostics(df)
+    # Convert to DataFrame
+    display_df = pd.DataFrame(display_data)
     
-    if results is None:
-        st.error("Failed to run batch diagnostics.")
-        return
+    # Show the table with clickable part numbers
+    event = st.dataframe(
+        display_df, 
+        use_container_width=True,
+        on_select="rerun",
+        selection_mode="single-row"
+    )
     
-    # Create tabs for different views
-    tab1, tab2, tab3 = st.tabs(["📊 Summary", "🔥 Top Issues", "📁 Downloads"])
+    # Show summary stats
+    total_parts = len(display_df)
+    parts_with_issues = len(display_df[display_df['Issue Count'] > 0])
+    st.caption(f"Showing {total_parts} parts ({parts_with_issues} with issues)")
     
-    with tab1:
-        create_batch_summary_visualizations(results, summary_stats)
-    
-    with tab2:
-        st.subheader("🔥 Most Problematic Parts")
-        create_top_issues_table(results)
-    
-    with tab3:
-        st.subheader("📁 Export Reports")
+    # Handle row selection for detailed analysis
+    if event.selection.rows:
+        selected_row = event.selection.rows[0]
+        selected_part = display_df.iloc[selected_row]['Part Number']
         
-        # Generate and offer downloads
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            if st.button("Generate CSV Report"):
-                with st.spinner("Generating CSV..."):
-                    try:
-                        csv_exporter = CSVExporter()
-                        csv_df = csv_exporter.format_results_for_csv(results)
-                        
-                        csv = csv_df.to_csv(index=False)
-                        st.download_button(
-                            label="📊 Download CSV Report",
-                            data=csv,
-                            file_name="forecast_diagnostics.csv",
-                            mime="text/csv"
-                        )
-                        st.success("CSV report ready for download!")
-                    except Exception as e:
-                        st.error(f"Failed to generate CSV: {e}")
-        
-        with col2:
-            if st.button("Generate JSON Summary"):
-                with st.spinner("Generating JSON..."):
-                    try:
-                        json_summarizer = JSONSummarizer()
-                        payload = json_summarizer.create_summary_payload(results, summary_stats)
-                        
-                        json_str = json.dumps(payload, indent=2)
-                        st.download_button(
-                            label="🤖 Download JSON Summary",
-                            data=json_str,
-                            file_name="summary_payload.json",
-                            mime="application/json"
-                        )
-                        st.success("JSON summary ready for download!")
-                    except Exception as e:
-                        st.error(f"Failed to generate JSON: {e}")
+        # Display simple analysis for selected part
+        st.divider()
+        display_simple_part_analysis(df, selected_part)
 
 
-def display_individual_analysis(df, item_ids):
-    """Display the individual part analysis interface."""
-    st.header("🔍 Individual Part Analysis")
-    
-    st.sidebar.header("Configuration")
-    selected_item = st.sidebar.selectbox("Select Item ID", item_ids)
-    
-    # LLM Configuration
-    st.sidebar.subheader("🤖 AI Settings")
-    
-    # Import LLM client and get available providers
-    import os
-    import sys
-    sys.path.append('modules')
-    
+def display_simple_part_analysis(df, selected_item):
+    """Display simple, clean analysis for selected part."""
+    # Get LLM provider for basic explanations
     try:
-        from modules.llm_client_robust import get_available_providers as direct_get_providers
-        available_providers = direct_get_providers()
-    except Exception as e:
-        st.sidebar.error(f"AI services unavailable: {e}")
-        available_providers = {"claude": False, "openai": False}
-    
-    if any(available_providers.values()):
-        # Show available providers
-        available_list = [p for p, available in available_providers.items() if available]
-        preferred = "claude" if available_providers.get("claude", False) else available_list[0]
-        default_idx = available_list.index(preferred) if preferred in available_list else 0
-        
-        llm_provider = st.sidebar.selectbox(
-            "AI Provider", 
-            available_list, 
-            index=default_idx,
-            help="Select AI provider for generating explanations"
-        )
-        st.sidebar.success(f"✅ {llm_provider.title()} AI ready")
-        use_llm = True
-    else:
-        st.sidebar.error("❌ No AI providers configured")
-        st.sidebar.info("💡 Configure API keys to enable AI explanations")
+        from modules.llm_client_robust import get_available_providers
+        available_providers = get_available_providers()
+        if any(available_providers.values()):
+            llm_provider = "claude" if available_providers.get("claude", False) else list(available_providers.keys())[0]
+            use_llm = True
+        else:
+            use_llm = False
+            llm_provider = None
+    except:
         use_llm = False
         llm_provider = None
     
-    if selected_item:
-        # Load item data
-        historical_data, forecast_data = get_item_data(df, selected_item)
+    # Load data and run diagnostics
+    historical_data, forecast_data = get_item_data(df, selected_item)
+    
+    if AGENT_AVAILABLE:
+        try:
+            agent = DetectorAgent()
+            diagnostics = agent.process_single(historical_data, forecast_data)
+        except:
+            from modules.diagnostics import run_all_diagnostics
+            from modules.loader import get_recent_actuals, get_early_forecast
+            recent_actuals = get_recent_actuals(historical_data)
+            early_forecast = get_early_forecast(forecast_data)
+            diagnostics = run_all_diagnostics(historical_data, forecast_data, recent_actuals, early_forecast)
+    else:
+        from modules.diagnostics import run_all_diagnostics
+        from modules.loader import get_recent_actuals, get_early_forecast
         recent_actuals = get_recent_actuals(historical_data)
         early_forecast = get_early_forecast(forecast_data)
-        
-        # Run diagnostics
         diagnostics = run_all_diagnostics(historical_data, forecast_data, recent_actuals, early_forecast)
+    
+    # Generate simple explanation
+    if use_llm and llm_provider:
+        try:
+            from modules.explainer_simple import prepare_analysis_summary, get_explanation
+            summary = prepare_analysis_summary(selected_item, diagnostics, historical_data, forecast_data)
+            explanation = get_explanation(summary, provider=llm_provider)
+            analysis_method = "llm"
+        except:
+            explanation = "Issues detected. Consider retraining with different models."
+            analysis_method = "basic"
+    else:
+        explanation = "Issues detected. Consider retraining with different models."
+        analysis_method = "basic"
+    
+    # === SECTION 1: ISSUE SUMMARY WITH VISUAL ===
+    st.subheader(f"📊 {selected_item} - Issue Summary")
+    
+    col1, col2 = st.columns([2, 1])
+    
+    with col1:
+        # Time series plot
+        fig = plot_forecast_analysis(historical_data, forecast_data, diagnostics, selected_item)
+        st.pyplot(fig)
+        plt.close()
+    
+    with col2:
+        # Issue summary
+        risk_score = diagnostics['summary']['risk_score']
+        total_issues = diagnostics['summary']['total_issues']
         
-        # Create explanation
-        analysis_summary = prepare_analysis_summary(selected_item, diagnostics, historical_data, forecast_data)
-        
-        if use_llm and llm_provider:
-            try:
-                # Use AI to generate explanation
-                from modules.llm_client_robust import get_explanation
-                explanation = get_explanation(analysis_summary, provider=llm_provider)
-                used_provider = llm_provider
-            except Exception as e:
-                st.error(f"❌ AI Error: {e}")
-                explanation = "Unable to generate AI explanation due to an error."
-                used_provider = "error"
+        # Risk indicator
+        if risk_score > 0.5:
+            st.error(f"🔴 HIGH RISK: {risk_score:.2f}")
+        elif risk_score > 0.2:
+            st.warning(f"🟡 MEDIUM RISK: {risk_score:.2f}")
         else:
-            explanation = "No AI provider available. Please configure your API keys."
-            used_provider = "none"
+            st.success(f"🟢 LOW RISK: {risk_score:.2f}")
         
-        report = format_explanation_report(selected_item, diagnostics, explanation, used_provider)
+        st.metric("Issues Found", total_issues)
         
-        # Display results
-        col1, col2 = st.columns([2, 1])
+        # List specific issues
+        if diagnostics['trend_mismatch']['detected']:
+            st.write("❌ Trend Mismatch")
+        if diagnostics['missing_seasonality']['detected']:
+            st.write("❌ Missing Seasonality")
+        if diagnostics['volatility_mismatch']['detected']:
+            st.write("❌ Too Flat")
+        if diagnostics['magnitude_mismatch']['detected']:
+            st.write("❌ Magnitude Mismatch")
         
+        if total_issues == 0:
+            st.write("✅ No issues detected")
+    
+    # === SECTION 2: ANALYSIS REPORT ===
+    analysis_icons = {"llm": "🤖", "basic": "📄"}
+    st.subheader(f"{analysis_icons.get(analysis_method, '📄')} Analysis Report")
+    st.info(explanation)
+    
+    # === SECTION 3: AUTO-RETRAINING ===
+    if total_issues > 0 and AUTO_RETRAIN_AVAILABLE:
+        st.subheader("🔄 Automatic Model Retraining")
+        
+        col1, col2 = st.columns([1, 2])
         with col1:
-            st.subheader("📊 Time Series Analysis")
-            
-            # Create and display plot
-            fig = plot_forecast_analysis(historical_data, forecast_data, diagnostics, selected_item)
-            st.pyplot(fig)
-            plt.close()
-            
-            # Summary statistics
-            st.subheader("📈 Summary Statistics")
-            stats_df = create_summary_stats_table(historical_data, forecast_data)
-            st.dataframe(stats_df, use_container_width=True)
+            if st.button("🚀 Auto-Retrain Models", key=f"retrain_{selected_item}"):
+                with st.spinner("Testing HoltWinters, Holt, and AutoETS..."):
+                    try:
+                        # Initialize basic retrain agent
+                        retrain_agent = BasicRetrainAgent()
+                        
+                        # Run basic retraining (always tests same 3 models)
+                        retrain_results = retrain_agent.retrain_and_select(
+                            historical_data=historical_data,
+                            original_forecast=forecast_data,
+                            item_id=selected_item
+                        )
+                        
+                        # Store results in session state for visualization
+                        st.session_state[f'retrain_results_{selected_item}'] = retrain_results
+                        
+                        if retrain_results['success']:
+                            st.success(f"✅ Best model: **{retrain_results['best_model']}** (Accuracy: {retrain_results['best_accuracy']:.3f})")
+                            
+                            # Show tested models
+                            tested_models = retrain_results.get('tested_models', [])
+                            st.info(f"🔄 Tested models: {', '.join(tested_models)}")
+                        else:
+                            error_msg = retrain_results.get('error', 'Unknown error')
+                            st.error(f"❌ Retraining failed: {error_msg}")
+                            
+                            # Show detailed error information
+                            with st.expander("🔍 Debug Information"):
+                                tested_models = retrain_results.get('tested_models', [])
+                                
+                                st.write(f"**Models Tested:** {', '.join(tested_models) if tested_models else 'None'}")
+                                
+                                st.write("**Available Models:**")
+                                for model_name in ['HoltWinters', 'Holt', 'AutoETS']:
+                                    st.write(f"- {model_name}")
+                                
+                                st.write("**Test Results:**")
+                                for result in retrain_results.get('all_results', []):
+                                    model = result.get('model', 'Unknown')
+                                    success = result.get('success', False)
+                                    error = result.get('error', 'N/A')
+                                    st.write(f"- {model}: {'✅' if success else '❌'} {error if not success else 'Success'}")
+                            
+                    except Exception as e:
+                        st.error(f"❌ Retraining error: {str(e)}")
         
         with col2:
-            st.subheader("🚨 Issue Detection")
-            
-            # Risk score
-            risk_score = report['risk_score']
-            if risk_score > 0.5:
-                st.error(f"🔴 High Risk: {risk_score:.3f}")
-            elif risk_score > 0.2:
-                st.warning(f"🟡 Medium Risk: {risk_score:.3f}")
-            else:
-                st.success(f"🟢 Low Risk: {risk_score:.3f}")
-            
-            # Issues summary
-            st.metric("Issues Detected", report['total_issues'])
-            st.metric("Avg Confidence", f"{report['avg_confidence']:.3f}")
-            
-            # Individual issues
-            issues = diagnostics
-            
-            if issues['trend_mismatch']['detected']:
-                st.error(f"❌ Trend Mismatch ({issues['trend_mismatch']['confidence']:.2f})")
-            
-            if issues['missing_seasonality']['detected']:
-                st.error(f"❌ Missing Seasonality ({issues['missing_seasonality']['confidence']:.2f})")
-            
-            if issues['volatility_mismatch']['detected']:
-                st.error(f"❌ Too Flat ({issues['volatility_mismatch']['confidence']:.2f})")
-            
-            if issues['magnitude_mismatch']['detected']:
-                st.error(f"❌ Magnitude Mismatch ({issues['magnitude_mismatch']['confidence']:.2f})")
-            
-            if report['total_issues'] == 0:
-                st.success("✅ No issues detected")
+            st.info("🤖 This will automatically test HoltWinters, Holt, and AutoETS models and select the most accurate one.")
+    
+    # === SECTION 4: BEFORE/AFTER VISUALIZATION ===
+    if f'retrain_results_{selected_item}' in st.session_state:
+        retrain_results = st.session_state[f'retrain_results_{selected_item}']
         
-        # Explanation section
-        st.subheader("🤖 AI Explanation")
-        if used_provider in ["claude", "openai"]:
-            st.caption(f"✅ Generated by {used_provider.title()} AI")
-            st.info(explanation)
-        elif used_provider == "error":
-            st.caption("❌ AI generation failed")
-            st.error(explanation)
-        else:
-            st.caption("❌ No AI provider configured")
-            st.warning(explanation)
-        
-        # Detailed diagnostics (expandable)
-        with st.expander("🔍 Detailed Diagnostics"):
-            detailed_report = create_detailed_report(report)
-            st.text(detailed_report)
-        
-        # Data preview (expandable)
-        with st.expander("📋 Data Preview"):
-            st.write("**Historical Data (last 10 months):**")
-            st.write(historical_data.tail(10))
-            st.write("**Forecast Data (first 10 months):**")
-            st.write(forecast_data.head(10))
+        if retrain_results.get('success', False):
+            st.subheader("📊 Before vs After Comparison")
+            
+            # Create simple before/after plot
+            best_forecast = retrain_results.get('best_forecast', [])
+            best_model = retrain_results.get('best_model', 'Unknown')
+            
+            if len(best_forecast) > 0:
+                fig = plot_simple_before_after(
+                    historical_data=historical_data,
+                    original_forecast=forecast_data,
+                    new_forecast=np.array(best_forecast),
+                    model_name=best_model,
+                    item_id=selected_item
+                )
+                
+                st.pyplot(fig)
+                plt.close()
+            
+            # Show simple metrics
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                accuracy = retrain_results.get('best_accuracy', 0)
+                st.metric("Best Model Accuracy", f"{accuracy:.3f}")
+            
+            with col2:
+                tested_models = retrain_results.get('tested_models', [])
+                st.metric("Models Tested", len(tested_models))
+            
+            with col3:
+                best_model = retrain_results.get('best_model', 'Unknown')
+                st.metric("Selected Model", best_model)
+            
+            # Clear results button
+            if st.button("🗑️ Clear Results", key=f"clear_{selected_item}"):
+                del st.session_state[f'retrain_results_{selected_item}']
+                st.rerun()
+    
+    # === SECTION 5: FEEDBACK ===
+    st.subheader("📝 Feedback")
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        rating = st.slider("Rate this analysis:", 1, 5, 3, key=f"rating_{selected_item}")
+    
+    with col2:
+        preferred_model = st.selectbox(
+            "Preferred model:",
+            ["None", "HoltWinters", "Holt", "AutoETS"],
+            key=f"model_{selected_item}"
+        )
+    
+    with col3:
+        if st.button("Submit", key=f"submit_{selected_item}"):
+            # Simple feedback collection (could be extended later)
+            st.success("✅ Thanks for your feedback!")
+
+
+def display_batch_summary(df):
+    """Display simplified batch summary table."""
+    st.header("📊 Part Summary")
+    
+    if not BATCH_AVAILABLE:
+        st.error("Analysis modules not available.")
+        return
+    
+    # Run batch processing
+    with st.spinner("Analyzing parts..."):
+        results, summary_stats = run_batch_diagnostics(df)
+    
+    if results is None:
+        st.error("Analysis failed.")
+        return
+    
+    # Show simple metrics
+    total_parts = summary_stats.get('total_parts', 0)
+    flagged_parts = summary_stats.get('flagged_parts', 0)
+    
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Total Parts", total_parts)
+    with col2:
+        st.metric("Parts with Issues", flagged_parts)
+    with col3:
+        pct = (flagged_parts / total_parts * 100) if total_parts > 0 else 0
+        st.metric("Issue Rate", f"{pct:.1f}%")
+    
+    st.markdown("---")
+    
+    # Create simple summary table
+    create_simple_batch_table(results, df)
 
 
 def main():
     st.set_page_config(page_title="Forecast Monitor Agent", layout="wide")
     
     st.title("📊 Forecast Monitor Agent")
-    st.markdown("**Portfolio-wide forecast diagnostics with scalable batch analysis**")
-    st.markdown("*Switch to Individual Analysis mode for detailed part-by-part inspection*")
+    st.markdown("**Simple forecast analysis - Click any part to see details**")
+    
+    # Minimal sidebar
+    st.sidebar.markdown("### Quick Info")
+    st.sidebar.info("💡 Click on any part in the table to see detailed analysis")
     
     # Load data
     try:
         df = load_data("data/data.csv")
-        item_ids = get_all_item_ids(df)
         
-        # Navigation - Default to Batch Summary
-        st.sidebar.header("📋 Navigation")
-        analysis_mode = st.sidebar.radio(
-            "Choose Analysis Mode",
-            ["📊 Batch Summary", "🔍 Individual Part Analysis"],
-            index=0,  # Default to batch summary
-            help="Switch between portfolio overview and detailed individual part analysis"
-        )
-        
-        # Show individual part analysis if selected
-        if analysis_mode == "🔍 Individual Part Analysis":
-            # Individual part analysis section
-            display_individual_analysis(df, item_ids)
-            return
-        
-        # Batch summary is now the main page - display it by default
+        # Display the simplified batch summary
         display_batch_summary(df)
     
     except FileNotFoundError:

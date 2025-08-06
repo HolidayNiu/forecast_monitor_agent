@@ -1,11 +1,25 @@
-"""
-Simple test without complex dependencies to verify basic structure.
-"""
-
-# Create mock data to test the logic structure
+# Test to verify flexible data length implementation
 import sys
-import os
-sys.path.append('.')
+sys.path.append('modules')
+
+# Test loader module changes
+try:
+    from modules.loader import get_item_data
+    print("SUCCESS: loader module imported")
+    
+    # Test function signature
+    import inspect
+    sig = inspect.signature(get_item_data)
+    params = list(sig.parameters.keys())
+    print("Function parameters: {}".format(params))
+    
+    if 'min_historical_months' in params and 'min_forecast_months' in params:
+        print("SUCCESS: New flexible parameters found in loader")
+    else:
+        print("ERROR: Missing flexible parameters in loader")
+        
+except Exception as e:
+    print("ERROR with loader: {}".format(e))
 
 # Mock the pandas functionality for testing
 class MockSeries:

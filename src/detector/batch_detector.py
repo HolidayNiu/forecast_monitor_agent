@@ -12,8 +12,8 @@ import sys
 # Add project root to path
 sys.path.append(str(Path(__file__).parent.parent.parent))
 
-from modules.diagnostics import run_all_diagnostics
-from modules.loader import get_item_data, get_recent_actuals, get_early_forecast
+from modules.loader import get_item_data
+from agent.detector_agent import DetectorAgent
 import config
 
 logger = logging.getLogger(__name__)
@@ -34,6 +34,9 @@ class BatchDetector:
         self.max_workers = max_workers or config.MAX_WORKERS
         self.results = []
         
+        # Create DetectorAgent instance for processing
+        self.agent = DetectorAgent()
+        
     def get_severity_level(self, confidence: float) -> str:
         """Determine severity level based on confidence score."""
         if confidence >= config.SEVERITY_THRESHOLDS['high']:
@@ -47,7 +50,7 @@ class BatchDetector:
     
     def process_single_part(self, item_id: str) -> Dict:
         """
-        Process diagnostics for a single part.
+        Process diagnostics for a single part using DetectorAgent.
         
         Args:
             item_id: The item_loc_id to process
@@ -58,14 +61,10 @@ class BatchDetector:
         try:
             # Load data for this part
             historical_data, forecast_data = get_item_data(self.df, item_id)
-            recent_actuals = get_recent_actuals(historical_data)
-            early_forecast = get_early_forecast(forecast_data)
             
-            # Run diagnostics
-            diagnostics = run_all_diagnostics(
-                historical_data, forecast_data, 
-                recent_actuals, early_forecast
-            )
+            # Use DetectorAgent to process the part
+            self.agent.reset()  # Clear any previous state
+            diagnostics = self.agent.process_single(historical_data, forecast_data)
             
             # Create part result
             part_result = {

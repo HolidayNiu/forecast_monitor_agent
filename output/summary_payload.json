@@ -1,0 +1,179 @@
+{
+  "metadata": {
+    "generated_at": "2025-07-29T14:13:04.542510",
+    "version": "1.0",
+    "data_source": "/Users/zihan/Desktop/projects/forecast_monitor_agent/data/data.csv",
+    "total_diagnostics_run": 3
+  },
+  "summary": {
+    "total_parts": 3,
+    "valid_parts": 3,
+    "flagged_parts": 2,
+    "error_parts": 0,
+    "issues": {
+      "trend_mismatch": [
+        "part_A",
+        "partB"
+      ],
+      "missing_seasonality": [
+        "part_A"
+      ],
+      "volatility_mismatch": [
+        "part_A"
+      ],
+      "magnitude_mismatch": []
+    },
+    "severity_breakdown": {
+      "medium": 1,
+      "none": 2
+    },
+    "avg_risk_score": 0.62,
+    "avg_issues_per_part": 1.33
+  },
+  "detailed_analysis": {
+    "trend_mismatch": {
+      "affected_count": 2,
+      "part_ids": [
+        "part_A",
+        "partB"
+      ],
+      "avg_confidence": 0.122,
+      "max_confidence": 0.207,
+      "high_confidence_parts": []
+    },
+    "missing_seasonality": {
+      "affected_count": 1,
+      "part_ids": [
+        "part_A"
+      ],
+      "avg_confidence": 1.0,
+      "max_confidence": 1.0,
+      "high_confidence_parts": [
+        "part_A"
+      ]
+    },
+    "volatility_mismatch": {
+      "affected_count": 1,
+      "part_ids": [
+        "part_A"
+      ],
+      "avg_confidence": 0.617,
+      "max_confidence": 0.617,
+      "high_confidence_parts": []
+    },
+    "magnitude_mismatch": {
+      "affected_count": 0,
+      "part_ids": [],
+      "avg_confidence": 0,
+      "max_confidence": 0,
+      "high_confidence_parts": []
+    }
+  },
+  "top_problematic_parts": [
+    {
+      "part_id": "part_A",
+      "risk_score": 1.823963316831734,
+      "total_issues": 3,
+      "severity": "medium",
+      "issues": [
+        {
+          "type": "trend_mismatch",
+          "confidence": 0.20743327037504924
+        },
+        {
+          "type": "missing_seasonality",
+          "confidence": 1.0
+        },
+        {
+          "type": "volatility_mismatch",
+          "confidence": 0.6165300464566847
+        }
+      ]
+    },
+    {
+      "part_id": "partB",
+      "risk_score": 0.036059554329207905,
+      "total_issues": 1,
+      "severity": "none",
+      "issues": [
+        {
+          "type": "trend_mismatch",
+          "confidence": 0.036059554329207905
+        }
+      ]
+    }
+  ],
+  "patterns": {
+    "multi_issue_parts": {
+      "count": 1,
+      "percentage": 33.3,
+      "part_ids": [
+        "part_A"
+      ]
+    },
+    "high_severity_parts": {
+      "count": 0,
+      "percentage": 0.0,
+      "part_ids": []
+    },
+    "issue_cooccurrence": {
+      "trend_mismatch_and_missing_seasonality": {
+        "count": 1,
+        "part_ids": [
+          "part_A"
+        ]
+      },
+      "trend_mismatch_and_volatility_mismatch": {
+        "count": 1,
+        "part_ids": [
+          "part_A"
+        ]
+      },
+      "missing_seasonality_and_volatility_mismatch": {
+        "count": 1,
+        "part_ids": [
+          "part_A"
+        ]
+      }
+    }
+  },
+  "recommendations": [
+    {
+      "type": "trend_mismatch",
+      "priority": "high",
+      "affected_parts": 2,
+      "percentage": 66.7,
+      "recommendation": "Review forecasting model parameters and recent structural breaks in demand patterns",
+      "action_items": [
+        "Analyze recent demand patterns for structural changes",
+        "Review model training period and data quality",
+        "Consider ensemble models or trend-aware algorithms"
+      ]
+    },
+    {
+      "type": "missing_seasonality",
+      "priority": "high",
+      "affected_parts": 1,
+      "percentage": 33.3,
+      "recommendation": "Enhance seasonal modeling capabilities in forecasting process",
+      "action_items": [
+        "Implement seasonal decomposition in preprocessing",
+        "Use seasonal ARIMA or exponential smoothing models",
+        "Validate seasonal patterns in historical data"
+      ]
+    },
+    {
+      "type": "volatility_mismatch",
+      "priority": "medium",
+      "affected_parts": 1,
+      "percentage": 33.3,
+      "recommendation": "Improve uncertainty quantification and volatility modeling",
+      "action_items": [
+        "Implement probabilistic forecasting methods",
+        "Use models that capture demand uncertainty (e.g., quantile regression)",
+        "Review forecast smoothing parameters"
+      ]
+    }
+  ],
+  "errors": null
+}

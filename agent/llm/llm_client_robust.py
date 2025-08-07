@@ -49,9 +49,14 @@ def _get_claude_explanation_robust(prompt, max_tokens=1000, temperature=0.3):
     
     client = anthropic.Anthropic(api_key=api_key)
     
-    system_prompt = """You are an expert forecast analyst. Given a technical analysis of forecast issues, 
-    provide a clear, human-readable explanation of what's wrong and why it matters for business planning. 
-    Keep your response concise (2-3 sentences) and focus on practical implications."""
+    system_prompt = """You are an expert demand forecasting analyst specializing in inventory planning and supply chain optimization.
+
+Analyze the provided data about a specific part's forecasting performance. Focus on:
+1. **Data-Driven Root Cause Analysis** - Examine the actual patterns in historical vs forecast data
+2. **Business Impact Assessment** - Quantify risks to inventory, service levels, and costs
+3. **Specific Actionable Recommendations** - Provide concrete next steps based on the detected issues
+
+Be specific to the part's actual demand patterns and avoid generic responses. Reference the specific metrics and trends provided."""
     
     # Try each model until one works
     last_error = None
@@ -104,9 +109,14 @@ def _get_openai_explanation(prompt, model="gpt-3.5-turbo", max_tokens=1000, temp
     
     client = openai.OpenAI(api_key=api_key)
     
-    system_prompt = """You are an expert forecast analyst. Given a technical analysis of forecast issues, 
-    provide a clear, human-readable explanation of what's wrong and why it matters for business planning. 
-    Keep your response concise (2-3 sentences) and focus on practical implications."""
+    system_prompt = """You are an expert demand forecasting analyst specializing in inventory planning and supply chain optimization.
+
+Analyze the provided data about a specific part's forecasting performance. Focus on:
+1. **Data-Driven Root Cause Analysis** - Examine the actual patterns in historical vs forecast data
+2. **Business Impact Assessment** - Quantify risks to inventory, service levels, and costs
+3. **Specific Actionable Recommendations** - Provide concrete next steps based on the detected issues
+
+Be specific to the part's actual demand patterns and avoid generic responses. Reference the specific metrics and trends provided."""
     
     try:
         response = client.chat.completions.create(
@@ -151,9 +161,14 @@ def _get_databricks_explanation(prompt, model=None, max_tokens=1000, temperature
     
     url = f"{host}/serving-endpoints/{model}/invocations"
     
-    system_prompt = """You are an expert forecast analyst. Given a technical analysis of forecast issues, 
-    provide a clear, human-readable explanation of what's wrong and why it matters for business planning. 
-    Keep your response concise (2-3 sentences) and focus on practical implications."""
+    system_prompt = """You are an expert demand forecasting analyst specializing in inventory planning and supply chain optimization.
+
+Analyze the provided data about a specific part's forecasting performance. Focus on:
+1. **Data-Driven Root Cause Analysis** - Examine the actual patterns in historical vs forecast data
+2. **Business Impact Assessment** - Quantify risks to inventory, service levels, and costs
+3. **Specific Actionable Recommendations** - Provide concrete next steps based on the detected issues
+
+Be specific to the part's actual demand patterns and avoid generic responses. Reference the specific metrics and trends provided."""
     
     headers = {
         "Authorization": f"Bearer {token}",
@@ -193,14 +208,23 @@ def _get_databricks_explanation(prompt, model=None, max_tokens=1000, temperature
 
 
 def get_available_providers():
-    """Check which LLM providers are available."""
+    """Check which LLM providers are available and test their API keys."""
     providers = {}
     
-    # Check Claude
+    # Check Claude with API key validation
     try:
         import anthropic
         api_key = os.getenv("ANTHROPIC_API_KEY")
-        providers["claude"] = bool(api_key)
+        if api_key:
+            # Quick validation - just check if key format is valid
+            if api_key.startswith('sk-ant-'):
+                providers["claude"] = True
+                logger.info("Claude API key found and validated")
+            else:
+                logger.warning("Claude API key format invalid")
+                providers["claude"] = False
+        else:
+            providers["claude"] = False
     except ImportError:
         providers["claude"] = False
     
@@ -208,20 +232,44 @@ def get_available_providers():
     try:
         import openai
         api_key = os.getenv("OPENAI_API_KEY")
-        providers["openai"] = bool(api_key)
+        if api_key and api_key.startswith('sk-'):
+            providers["openai"] = True
+            logger.info("OpenAI API key found and validated")
+        else:
+            providers["openai"] = False
     except ImportError:
         providers["openai"] = False
     
     # Check Databricks
     try:
-        import requests  # Databricks uses requests, not a special SDK
+        import requests
         token = os.getenv("DATABRICKS_TOKEN")
         host = os.getenv("DATABRICKS_HOST")
-        providers["databricks"] = bool(token and host)
+        if token and host:
+            providers["databricks"] = True
+            logger.info("Databricks credentials found and validated")
+        else:
+            providers["databricks"] = False
     except ImportError:
         providers["databricks"] = False
     
     return providers
+
+
+def get_preferred_provider():
+    """Auto-detect and return the preferred available provider."""
+    providers = get_available_providers()
+    
+    # Priority order: Claude -> Databricks -> OpenAI
+    priority_order = ["claude", "databricks", "openai"]
+    
+    for provider in priority_order:
+        if providers.get(provider, False):
+            logger.info(f"Auto-selected {provider} as LLM provider")
+            return provider
+    
+    logger.warning("No LLM providers available")
+    return None
 
 
 def test_llm_connection(provider="claude"):
